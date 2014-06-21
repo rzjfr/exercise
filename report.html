@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+
+<title>Predicting personal activity</title>
+
+
+
+
+
+<style type="text/css">
+body, td {
+   font-family: sans-serif;
+   background-color: white;
+   font-size: 13px;
+}
+
+body {
+  max-width: 800px;
+  margin: auto;
+  padding: 1em;
+  line-height: 20px;
+}
+
+tt, code, pre {
+   font-family: 'DejaVu Sans Mono', 'Droid Sans Mono', 'Lucida Console', Consolas, Monaco, monospace;
+}
+
+h1 {
+   font-size:2.2em;
+}
+
+h2 {
+   font-size:1.8em;
+}
+
+h3 {
+   font-size:1.4em;
+}
+
+h4 {
+   font-size:1.0em;
+}
+
+h5 {
+   font-size:0.9em;
+}
+
+h6 {
+   font-size:0.8em;
+}
+
+a:visited {
+   color: rgb(50%, 0%, 50%);
+}
+
+pre, img {
+  max-width: 100%;
+}
+
+pre code {
+   display: block; padding: 0.5em;
+}
+
+code {
+  font-size: 92%;
+  border: 1px solid #ccc;
+}
+
+code[class] {
+  background-color: #F8F8F8;
+}
+
+table, td, th {
+  border: none;
+}
+
+blockquote {
+   color:#666666;
+   margin:0;
+   padding-left: 1em;
+   border-left: 0.5em #EEE solid;
+}
+
+hr {
+   height: 0px;
+   border-bottom: none;
+   border-top-width: thin;
+   border-top-style: dotted;
+   border-top-color: #999999;
+}
+
+@media print {
+   * {
+      background: transparent !important;
+      color: black !important;
+      filter:none !important;
+      -ms-filter: none !important;
+   }
+
+   body {
+      font-size:12pt;
+      max-width:100%;
+   }
+
+   a, a:visited {
+      text-decoration: underline;
+   }
+
+   hr {
+      visibility: hidden;
+      page-break-before: always;
+   }
+
+   pre, blockquote {
+      padding-right: 1em;
+      page-break-inside: avoid;
+   }
+
+   tr, img {
+      page-break-inside: avoid;
+   }
+
+   img {
+      max-width: 100% !important;
+   }
+
+   @page :left {
+      margin: 15mm 20mm 15mm 10mm;
+   }
+
+   @page :right {
+      margin: 15mm 10mm 15mm 20mm;
+   }
+
+   p, h2, h3 {
+      orphans: 3; widows: 3;
+   }
+
+   h2, h3 {
+      page-break-after: avoid;
+   }
+}
+</style>
+
+
+
+</head>
+
+<body>
+<h1>Predicting personal activity</h1>
+
+<h2>Abstract</h2>
+
+<p>The goal of this project is to predict the manner in which they did the exercise.</p>
+
+<h2>Cleaning data</h2>
+
+<p>first we load the data. the &quot;#DIV/0!&quot;,&quot;NA&quot; and empty texts are considered as missing values.</p>
+
+<pre><code class="r">## Load the data
+training &lt;- read.csv(&quot;pml-training.csv&quot;, na.strings=c(&quot;&quot;,&quot;#DIV/0!&quot;,&quot;NA&quot;),
+                     stringsAsFactors = F)
+testing &lt;- read.csv(&quot;pml-testing.csv&quot;, na.strings=c(&quot;&quot;,&quot;#DIV/0!&quot;,&quot;NA&quot;),
+                    stringsAsFactors = F)
+training$classe &lt;- factor(training$classe)
+</code></pre>
+
+<pre><code class="r">## look at the data
+dim(training)
+</code></pre>
+
+<pre><code>## [1] 19622   160
+</code></pre>
+
+<pre><code class="r">table(training$classe)
+</code></pre>
+
+<pre><code>## 
+##    A    B    C    D    E 
+## 5580 3797 3422 3216 3607
+</code></pre>
+
+<pre><code class="r">dim(testing)
+</code></pre>
+
+<pre><code>## [1]  20 160
+</code></pre>
+
+<p>variables that we know they are irrelevent for prediction will be removed. for example username does not appear to give much information about exercise habits of a person. every single change in features of training set, must be applied to testing set too.</p>
+
+<pre><code class="r">## Remove useless features
+training &lt;- training[, -which(names(training) == &quot;X&quot;)] ## row numbers
+training &lt;- training[, -which(names(training) == &quot;user_name&quot;)]
+testing &lt;- testing[, -which(names(testing) == &quot;user_name&quot; |
+                            names(testing) == &quot;X&quot;)]
+
+## Remove features with character class
+training &lt;- training[, -which(names(training) == &quot;new_window&quot;)]
+training &lt;- training[, -which(names(training) == &quot;cvtd_timestamp&quot;)]
+testing &lt;- testing[, -which(names(testing) == &quot;new_window&quot; |
+                            names(testing) == &quot;cvtd_timestamp&quot;)]
+</code></pre>
+
+<p>all variables that has at least one NA element will be removed.</p>
+
+<pre><code class="r">## Remove features with NA
+hasNa &lt;- sapply(training, function(x) sum(is.na(x))&gt;0)
+training &lt;- training[, !hasNa]
+testing &lt;- testing[, !hasNa]
+</code></pre>
+
+<p>to continue</p>
+
+<pre><code class="r">##
+inTraining &lt;- createDataPartition(training$classe, p = 0.75, list = FALSE)
+train &lt;- training[inTraining, ]
+test &lt;- training[-inTraining, ]
+</code></pre>
+
+<p>principal component analysis</p>
+
+<pre><code class="r">## choose 15 principal components
+#preproc &lt;- preProcess(train[,-ncol(train)], method=&#39;pca&#39;, pcaComp=15)
+#trainPc &lt;- predict(preproc, train[,-ncol(train)])
+#trainPc &lt;- cbind(trainPc, classe=train$classe)
+#preproc &lt;- preProcess(test[,-ncol(test)], method=&#39;pca&#39;, pcaComp=15)
+#testPc &lt;- predict(preproc, test[,-ncol(test)])
+#testPc &lt;- cbind(testPc, classe=test$classe)
+</code></pre>
+
+<p>create the model with random forest algorithm.</p>
+
+<pre><code class="r">## create the model
+fitControl &lt;- trainControl(method = &quot;cv&quot;, number = 3)
+fit &lt;- train(classe ~ ., method=&quot;rf&quot;, data=train)
+</code></pre>
+
+<p>here we can know how well we predict the <code>classe</code> with our model</p>
+
+<pre><code class="r">fit$finalModel
+</code></pre>
+
+<pre><code>## 
+## Call:
+##  randomForest(x = x, y = y, mtry = param$mtry) 
+##                Type of random forest: classification
+##                      Number of trees: 500
+## No. of variables tried at each split: 28
+## 
+##         OOB estimate of  error rate: 0.06%
+## Confusion matrix:
+##      A    B    C    D    E class.error
+## A 4185    0    0    0    0    0.000000
+## B    3 2845    0    0    0    0.001053
+## C    0    3 2564    0    0    0.001169
+## D    0    0    1 2409    2    0.001244
+## E    0    0    0    0 2706    0.000000
+</code></pre>
+
+<pre><code class="r">predictions &lt;- predict(fit, newdata=test)
+confusionMatrix(predictions, test$classe)
+</code></pre>
+
+<pre><code>## Confusion Matrix and Statistics
+## 
+##           Reference
+## Prediction    A    B    C    D    E
+##          A 1395    0    0    0    0
+##          B    0  949    1    0    0
+##          C    0    0  854    0    0
+##          D    0    0    0  803    0
+##          E    0    0    0    1  901
+## 
+## Overall Statistics
+##                                     
+##                Accuracy : 1         
+##                  95% CI : (0.999, 1)
+##     No Information Rate : 0.284     
+##     P-Value [Acc &gt; NIR] : &lt;2e-16    
+##                                     
+##                   Kappa : 0.999     
+##  Mcnemar&#39;s Test P-Value : NA        
+## 
+## Statistics by Class:
+## 
+##                      Class: A Class: B Class: C Class: D Class: E
+## Sensitivity             1.000    1.000    0.999    0.999    1.000
+## Specificity             1.000    1.000    1.000    1.000    1.000
+## Pos Pred Value          1.000    0.999    1.000    1.000    0.999
+## Neg Pred Value          1.000    1.000    1.000    1.000    1.000
+## Prevalence              0.284    0.194    0.174    0.164    0.184
+## Detection Rate          0.284    0.194    0.174    0.164    0.184
+## Detection Prevalence    0.284    0.194    0.174    0.164    0.184
+## Balanced Accuracy       1.000    1.000    0.999    0.999    1.000
+</code></pre>
+
+<pre><code class="r">table(predictions == test$classe)
+</code></pre>
+
+<pre><code>## 
+## FALSE  TRUE 
+##     2  4902
+</code></pre>
+
+<p>we predict the final answers which is the real predictions for real test data set</p>
+
+<pre><code class="r">answers &lt;- predict(fit, testing)
+</code></pre>
+
+</body>
+
+</html>
